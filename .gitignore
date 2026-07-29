@@ -256,3 +256,4 @@ tmp/
 ops-math/
 npu_tests/A0*_bug1
 npu_tests/*.log
+ops-nn/
