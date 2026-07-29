@@ -491,6 +491,51 @@ A08: exit=1  "[BUG CONFIRMED] SEGFAULT triggered"
 | **预期异常** | 算子编译报错 `kernel not found` / `op compile failed`，Mul 无法在 AICore 执行 |
 | **验证结论** | Agent 检查 opFile 引用的文件名是否与实际 kernel 实现匹配时直接发现 ✅ |
 
+### 7.14 A14 — 类型转换可逆性检查缺失 (中等难度)
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `self`: dtype=FLOAT16, shape=[2,3]; `other`: dtype=FLOAT32, shape=[2,3]; `out`: dtype=INT8, shape=[2,3] |
+| **验证方法** | promoteType=FLOAT32 无法安全 cast 到 INT8，但因缺少 `OP_CHECK_RESULT_DTYPE_CAST_FAILED` 检查不报错 |
+| **预期异常** | 应返回 ACLNN_ERR_PARAM_INVALID（类型不可逆转换），实际返回 SUCCESS 后产生静默数据截断 |
+| **验证结论** | Agent 通过对比同族函数 CheckMulsPromoteDtype（有此检查）发现 Mul 路径遗漏 ✅ |
+
+### 7.15 A15 — 非连续内存路径错误 (中等难度)
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `self`: dtype=FLOAT, shape=[4,4], strides=[1,4]（转置/列主序）; `other`: dtype=FLOAT, shape=[4,4], strides=[1,4] |
+| **验证方法** | 当 dtype==promoteType 时直接用 stride view 调用 Mul，未检查 kernel 是否支持该 stride 模式 |
+| **预期异常** | 在不支持非连续模式的 kernel 上计算结果错误（应先 Contiguous 再计算） |
+| **验证结论** | Agent 指出删除 `IsMulSupportNonContiguous` 后无条件传入非连续 tensor ✅ |
+
+### 7.16 A16 — INT8 溢出截断缺失 (中等难度)
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `x1`: dtype=INT8, values=[100, -100, 127, -128]; `x2`: dtype=INT8, values=[2, 2, 2, 2] |
+| **验证方法** | INT8 乘法 100*2=200 超出 int8 范围 [-128,127]，应做 &0xFF 截断后再 cast |
+| **预期异常** | 不做截断时高位数据泄漏到 uint8 cast，结果错误 |
+| **验证结论** | Agent 发现了 CopyOut 类型不匹配（间接相关），但未直接指出 AndFF 缺失 ⚠️ |
+
+### 7.17 A17 — 跨层 dtype 不一致 (中等难度)
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发条件** | INT8×INT8→INT8 的 Mul 运算 |
+| **验证方法** | MulInt8Op 的 CopyOut 使用 `Placeholder::Out0<uint8_t>` 而非 `<int8_t>`，与算子注册的 output dtype=INT8 不一致 |
+| **预期异常** | 输出数据被按 uint8 格式写入，但框架按 int8 解读，负数结果变成大正数 |
+| **验证结论** | Agent 逐步追踪类型链 CopyIn→Cast→Mul→AndFF→Cast→CopyOut 时发现 ✅ |
+
+### 7.18 A18 — UB 超限分配 (中等难度)
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发条件** | 任何调用 Mul 算子进入 PostTiling 的场景 |
+| **验证方法** | 第210行 `SetLocalMemorySize(ubSize_ + DCACHE_SIZE)` 中 `+` 应为 `-`，导致分配的 UB 超出物理容量 |
+| **预期异常** | 超出 UB 物理容量，kernel 执行时内存越界，可能导致 NPU 挂死或计算错误 |
+| **验证结论** | Agent 直接识别出 `+` 号错误，指出"UB 总大小加上 DCACHE 超出硬件物理容量" ✅ |
+
 ---
 
 ## 附录 A：Agent 完整审查 Prompt

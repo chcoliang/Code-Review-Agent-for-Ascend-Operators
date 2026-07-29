@@ -27,17 +27,28 @@
 | A12 | 5.7 DynamicCompileStaticFlag反转 | ✅ | op_host(代码分析) | ✅ | 指出false影响静态编译优化 |
 | A13 | 5.8 opFile名称错误mul_opt | ✅ | op_host(代码分析) | ✅ | 指出mul_opt不存在，kernel加载失败 |
 
+### Phase 3: 中等难度注入 (A14-A18)
+
+| Case | 注入错误 | Agent检出 | 验证方式 | 能暴露注入bug | 说明 |
+|------|---------|:---:|:---:|:---:|------|
+| A14 | 2.4 删除promoteType→out转换检查 | ✅ | op_api(代码分析) | ✅ | 指出缺少对promoteType到out的安全转换校验 |
+| A15 | 3.3 删除IsMulSupportNonContiguous | ✅ | op_api(代码分析) | ✅ | 指出未检查NonContiguous支持直接传stride tensor |
+| A16 | 6.1 删除INT8 AndFF截断 | ⚠️ | op_kernel(代码分析) | ⚠️ | 发现CopyOut类型不匹配(间接相关)，未直接指出缺AndFF |
+| A17 | 6.5 CopyOut int8→uint8类型不一致 | ✅ | op_kernel(代码分析) | ✅ | 明确指出MulInt8Op CopyOut用uint8_t而非int8_t |
+| A18 | 7.4 UB size ubSize_+DCACHE(应为减) | ✅ | op_host(代码分析) | ✅ | 明确指出+号错误，应为-号，超出硬件物理容量 |
+
 ## 汇总
 
 | 指标 | 值 |
 |------|:--:|
-| 总评测 case | 13 (A01~A13) |
-| **总注入 bug 检出率** | **9/13 = 69.2%** |
-| op_api 层检出率 | 5/9 = 55.6% |
-| op_host 层检出率 | 4/4 = 100% |
-| 验证代码编译率(op_api) | 8/8 = 100% |
-| NPU验证能暴露注入bug | 4/8 = 50% (A01,A02,A03,A07) |
-| 未检出 case | A05(白名单遗漏), A06(白名单过宽), A08(MAX_DIM删除), A09(Scalar精度) |
+| 总评测 case | **18** (A01~A18) |
+| **总注入 bug 检出率** | **13.5/18 = 75%** |
+| 简单注入检出率 | 9/13 = 69.2% |
+| 中等难度检出率 | 4.5/5 = 90% |
+| op_api 层检出率 | 7/11 = 63.6% |
+| op_host 层检出率 | 6/6 = 100% |
+| op_kernel 层检出率 | 1.5/2 = 75% |
+| 未检出 case | A05, A06, A08, A09, A16(部分) |
 
 ## Agent 各 case 首要发现
 
