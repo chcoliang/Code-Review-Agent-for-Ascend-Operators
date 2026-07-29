@@ -373,6 +373,126 @@ A08: exit=1  "[BUG CONFIRMED] SEGFAULT triggered"
 
 ---
 
+## 7. Agent 给出的具体评测方式（数据 + 方法）
+
+### 7.1 A01 — 空指针校验缺失
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `self` = 有效 tensor (shape=[2,3], dtype=FLOAT), `other` = 有效 tensor (shape=[2,3], dtype=FLOAT), `out` = `nullptr` |
+| **验证方法** | 调用 `aclnnMulGetWorkspaceSize(self, other, nullptr, &ws, &exec)`，观察是否 SEGFAULT |
+| **预期异常** | 程序崩溃 (SEGFAULT)；正确行为应返回 `ACLNN_ERR_PARAM_NULLPTR (161001)` |
+| **NPU 实测** | 正确版返回 161001（有防护），验证方案有效 ✅ |
+
+### 7.2 A02 — 输出Shape校验缺失
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `self`: shape=[3,1], dtype=FLOAT; `other`: shape=[1,4], dtype=FLOAT; `out`: shape=[2,2], dtype=FLOAT |
+| **验证方法** | 广播结果应为 [3,4]，但传入 out=[2,2]，调用 `aclnnMulGetWorkspaceSize` 检查返回值 |
+| **预期异常** | 应返回错误码（shape 不匹配），实际返回 `ACLNN_SUCCESS` 后执行阶段缓冲区越界 |
+| **NPU 实测** | 正确版返回 161002（拒绝），验证方案有效 ✅ |
+
+### 7.3 A03 — DT_DOUBLE 被误拒
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `self`: shape=[2,3], dtype=DT_DOUBLE, values=[[1,2,3],[4,5,6]]; `other`: shape=[2,3], dtype=DT_DOUBLE; `out`: shape=[2,3], dtype=DT_DOUBLE |
+| **验证方法** | 1) 调用 `aclnnMulGetWorkspaceSize(DOUBLE_self, DOUBLE_other, ...)` 观察返回值<br>2) 交换律验证：`Mul(INT32, DOUBLE)` vs `Mul(DOUBLE, INT32)` 应相同 |
+| **预期异常** | 返回 `ACLNN_ERR_PARAM_INVALID` 而非 `ACLNN_SUCCESS`；破坏乘法交换律 |
+| **NPU 实测** | 返回 561103（拒绝），输出明确显示 bug ✅ |
+
+### 7.4 A04 — 空Tensor处理遗漏
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `self`: shape=[0,4], dtype=FLOAT32（空tensor）; `other`: shape=[1,4], dtype=FLOAT32; `out`: shape=[0,4] |
+| **验证方法** | 调用 `aclnnMulGetWorkspaceSize`，对比 `aclnnMulsGetWorkspaceSize` 对空tensor的行为（后者应直接返回 ws=0） |
+| **预期异常** | 应检测空tensor后 ws=0 并返回 SUCCESS，实际继续执行计算图构建 |
+| **NPU 实测** | 返回 0+ws=0，但后续 aclnnMul 执行超时 ⚠️ |
+
+### 7.5 A05 — dtype白名单遗漏（Agent 未检出注入 bug）
+
+| 项目 | Agent 给出的内容（非注入 bug） |
+|------|------|
+| **触发数据** | `self`: shape=[4], dtype=FP16, values=[1.0, 2.0, 0.5, 1.0]; `scalar`=65536.0 (超 FP16 max 65504) |
+| **验证方法** | 模拟 `canUseMuls` 路径：FP16 tensor × 65536.0，在 FP16 精度下计算 |
+| **预期异常** | 结果为 INF（溢出），正确行为应先 Cast 到 FP32 再计算得 65536.0 |
+| **NPU 实测** | 模拟输出 `inf [OVERFLOW!]`，验证了另一个真实 bug ✅ |
+
+### 7.6 A06 — dtype白名单过宽（Agent 未检出注入 bug）
+
+| 项目 | Agent 给出的内容（非注入 bug） |
+|------|------|
+| **触发数据** | `self`: 有效 tensor (shape=[2,3], dtype=FLOAT); `workspaceSize` = `nullptr` |
+| **验证方法** | 调用 `aclnnMulsGetWorkspaceSize(..., nullptr, &exec)` 观察是否 SEGFAULT |
+| **预期异常** | 应返回 `ACLNN_ERR_PARAM_NULLPTR`，实际 SEGFAULT |
+| **NPU 实测** | 正确版返回 161001（有防护），当前版不崩溃 |
+
+### 7.7 A07 — 错误码伪装
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发数据** | `self` = `nullptr`, `other` = `nullptr`, `out` = `nullptr` |
+| **验证方法** | 调用 `aclnnMulGetWorkspaceSize(nullptr, nullptr, nullptr, &ws, &exec)`，检查返回值 |
+| **预期异常** | 应返回 `ACLNN_ERR_PARAM_NULLPTR (161001)`，实际返回 `ACLNN_SUCCESS (0)` 后对 nullptr 解引用 → SEGFAULT |
+| **NPU 实测** | 正确版返回 161001，验证方案有效 ✅ |
+
+### 7.8 A08 — 维度上限检查缺失（Agent 未检出注入 bug）
+
+| 项目 | Agent 给出的内容（非注入 bug） |
+|------|------|
+| **触发数据** | `self`: 有效 tensor (shape=[2,3], dtype=FLOAT); `other`: scalar=2.0; `workspaceSize` = `nullptr` |
+| **验证方法** | 调用 `aclnnMulsGetWorkspaceSize(..., nullptr, &exec)`，观察是否 SEGFAULT |
+| **预期异常** | 应返回错误码，实际 SEGFAULT（空指针解引用） |
+| **NPU 实测** | EXIT=1，确认触发了真实的空指针 bug ✅ |
+
+### 7.9 A09 — Scalar精度保持丢失（Agent 未检出注入 bug）
+
+| 项目 | Agent 给出的内容（非注入 bug） |
+|------|------|
+| **触发数据** | `selfRef`: shape=[2,2,2,2,2,2,2,2,2] (9维), dtype=FLOAT32; `other`: 9维 FLOAT32 |
+| **验证方法** | 调用 `aclnnInplaceMulGetWorkspaceSize` 对比 `aclnnMulGetWorkspaceSize`（后者有 MAX_DIM 检查） |
+| **预期异常** | InplaceMul 接受超维 tensor（无 MAX_DIM 检查），与 Mul 行为不对称 |
+
+### 7.10 A10 — DTYPE_MAP 缺 DT_FLOAT
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发条件** | 两个 float32 tensor 做 Mul 运算，输出也为 float32 |
+| **验证方法** | 代码分析：`DTYPE_MAP.find({DT_FLOAT, DT_FLOAT, DT_FLOAT})` 返回 `end()`，Tiling 失败 |
+| **预期异常** | `DoOpTiling()` 打印 "Dtypes are not support"，返回 `GRAPH_FAILED`，算子执行失败 |
+| **验证结论** | Agent 通过遍历 DTYPE_MAP 的 key 列表直接发现缺失 ✅ |
+
+### 7.11 A11 — dtype注册不匹配
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发条件** | 用户传入 x1=INT8, x2=BF16 的 tensor 调用 Mul |
+| **验证方法** | 检查第 0 组 dtype 组合：x1=INT8, x2=BF16, y=BF16，硬件无 INT8×BF16 计算通路 |
+| **预期异常** | kernel 编译报 dtype 不支持 / 运行时内存越界 / tiling 断言失败 |
+| **验证结论** | Agent 逐位置对齐 x1/x2/y 的 dtype 列表时直接发现第 0 位不匹配 ✅ |
+
+### 7.12 A12 — 编译配置标志反转
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发条件** | 静态 shape 场景（固定 batch size 推理），Mul 算子所有输入 shape 编译期确定 |
+| **验证方法** | 检查 `DynamicCompileStaticFlag(false)` — 正常应为 true 以启用静态编译优化 |
+| **预期异常** | 无法触发静态 tiling 优化，性能退化；在某些框架优化路径中可能报错 |
+| **验证结论** | Agent 基于配置语义分析发现 false 不合理 ✅ |
+
+### 7.13 A13 — opFile名称错误
+
+| 项目 | Agent 给出的内容 |
+|------|------|
+| **触发条件** | 任何调用 Mul 算子的场景 |
+| **验证方法** | 框架根据 `opFile.value = "mul_opt"` 查找 kernel binary，但项目中不存在 `mul_opt` 文件 |
+| **预期异常** | 算子编译报错 `kernel not found` / `op compile failed`，Mul 无法在 AICore 执行 |
+| **验证结论** | Agent 检查 opFile 引用的文件名是否与实际 kernel 实现匹配时直接发现 ✅ |
+
+---
+
 ## 附录 A：Agent 完整审查 Prompt
 
 ```
