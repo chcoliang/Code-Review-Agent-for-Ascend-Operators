@@ -56,7 +56,7 @@ static const std::initializer_list<DataType> ASCEND910_DTYPE_DTYPE_SUPPORT_LIST 
   DataType::DT_COMPLEX64};
 
 static const std::initializer_list<DataType> ASCEND910B_DTYPE_DTYPE_SUPPORT_LIST = {
-  DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT32, DataType::DT_DOUBLE, DataType::DT_INT8,
+  DataType::DT_FLOAT, DataType::DT_FLOAT16, DataType::DT_INT32, DataType::DT_INT8,
   DataType::DT_UINT8, DataType::DT_INT16, DataType::DT_INT64, DataType::DT_BOOL, DataType::DT_COMPLEX128,
   DataType::DT_COMPLEX64, DataType::DT_BF16};
 
