@@ -17,14 +17,27 @@
 | A07 | 1.4 错误码伪装 | ✅ | ✅ | ✅ exit=0 | ✅ | 正确版返回161001；buggy版返回0+SEGFAULT |
 | A08 | 4.2 OP_CHECK_MAX_DIM删除 | ❌ | ✅ | ✅ exit=1 | ❌ | 发现的是workspaceSize空指针(实际触发了真实bug) |
 
+### Phase 2: op_host 层 + 补充 op_api (A09-A13)
+
+| Case | 注入错误 | Agent检出 | 验证方式 | 能暴露注入bug | 说明 |
+|------|---------|:---:|:---:|:---:|------|
+| A09 | 2.3 Scalar精度保持丢失 | ❌ | op_api(NPU) | ❌ | 发现MAX_DIM/mix-dtype(非注入) |
+| A10 | 5.1 DTYPE_MAP缺DT_FLOAT | ✅ | op_host(代码分析) | ✅ | 明确指出缺少float32组合 |
+| A11 | 5.6 dtype注册x1=INT8不匹配 | ✅ | op_host(代码分析) | ✅ | 指出第0组x1=INT8与x2=BF16不合法 |
+| A12 | 5.7 DynamicCompileStaticFlag反转 | ✅ | op_host(代码分析) | ✅ | 指出false影响静态编译优化 |
+| A13 | 5.8 opFile名称错误mul_opt | ✅ | op_host(代码分析) | ✅ | 指出mul_opt不存在，kernel加载失败 |
+
 ## 汇总
 
 | 指标 | 值 |
 |------|:--:|
-| 注入 bug 检出率 | **5/8 = 62.5%** |
-| 验证代码编译率 | 8/8 = 100% |
-| 验证能暴露注入bug | **4/8 = 50%** (A01,A02,A03,A07) |
-| 未检出 case | A05(白名单遗漏), A06(白名单过宽), A08(MAX_DIM删除) |
+| 总评测 case | 13 (A01~A13) |
+| **总注入 bug 检出率** | **9/13 = 69.2%** |
+| op_api 层检出率 | 5/9 = 55.6% |
+| op_host 层检出率 | 4/4 = 100% |
+| 验证代码编译率(op_api) | 8/8 = 100% |
+| NPU验证能暴露注入bug | 4/8 = 50% (A01,A02,A03,A07) |
+| 未检出 case | A05(白名单遗漏), A06(白名单过宽), A08(MAX_DIM删除), A09(Scalar精度) |
 
 ## Agent 各 case 首要发现
 
@@ -38,6 +51,11 @@
 | A06 | workspaceSize/executor空指针未检查 | ❌ |
 | A07 | CheckMulParams第322行错误码ACLNN_SUCCESS | ✅ |
 | A08 | workspaceSize空指针解引用 | ❌ |
+| A09 | CheckInplaceMulShape缺MAX_DIM | ❌ |
+| A10 | 缺少{DT_FLOAT,DT_FLOAT,DT_FLOAT}组合 | ✅ |
+| A11 | 第0组x1=INT8与x2=BF16不合法 | ✅ |
+| A12 | DynamicCompileStaticFlag(false)影响优化 | ✅ |
+| A13 | opFile="mul_opt"不存在，kernel加载失败 | ✅ |
 
 ## NPU 实测输出摘要
 
@@ -55,7 +73,8 @@ A08: "SEGFAULT triggered due to null workspaceSize" → 触发了真实的空指
 ## 结论
 
 1. **逻辑矛盾类 bug 检出率 100%** (5/5)：Agent 通过对称性分析高效发现
-2. **静态数据结构变更类检出率 0%** (0/2)：白名单增删需要硬件领域知识
-3. **删除防护行类检出不稳定** (0/1)：A08 的 MAX_DIM 删除未被发现
-4. **验证代码工程质量优秀**：100% 编译通过，NPU 上真实可运行
-5. **意外收获**：A08 测试意外触发了 aclnnMulsGetWorkspaceSize 的真实空指针 bug
+2. **op_host 配置类 bug 检出率 100%** (4/4)：dtype注册/tiling映射/编译配置均可通过代码审查发现
+3. **静态数据结构变更类检出率 0%** (0/2)：白名单增删需要硬件领域知识
+4. **删除防护行/精度逻辑类检出率 0%** (0/2)：A08 MAX_DIM、A09 keepB16 均未发现
+5. **验证代码工程质量优秀**：op_api 层 100% 编译通过，NPU 上真实可运行
+6. **意外收获**：A08 测试触发了真实的 workspaceSize 空指针 bug；A05 暴露了 canUseMuls 精度 bug
