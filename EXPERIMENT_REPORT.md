@@ -370,3 +370,260 @@ A08: exit=1  "[BUG CONFIRMED] SEGFAULT triggered"
 2. **增加检查清单**：提供 "每个校验函数应包含的检查项" 参考
 3. **多轮审查**：对同一代码多次审查取并集，利用非确定性扩大覆盖
 4. **结合动态分析**：让 Agent 先静态审查，再基于运行结果二次分析
+
+---
+
+## 附录 A：Agent 完整审查 Prompt
+
+```
+你是 NPU 算子代码审查专家。审查目标运行在 Ascend 910B, CANN 8.5.0。
+
+审查流程：
+1. 通读代码，理解结构和数据流
+2. 逐函数检查：参数校验、同族对称性、类型推导、边界条件、错误路径
+3. 列出所有发现的 bug
+
+对每个 bug 要求：
+1. 指出位置（文件:函数:行号）、类型、严重程度、描述
+2. 给出能触发该 bug 的测试输入数据（具体的 shape、dtype、值）
+3. 写出完整可编译的 C++ 验证程序，程序输出能证明 bug 存在
+   - 程序应打印实际返回值/行为
+   - 并注明"正确行为应该是什么"
+   - 如果 bug 会导致崩溃，程序应能触发 SEGFAULT
+
+不需要给出修复方案。
+
+环境信息：
+| 项目 | 值 |
+|------|-----|
+| 硬件 | Ascend 910B |
+| CANN | 8.5.0 |
+| 头文件 | /usr/local/Ascend/cann-8.5.0/include |
+| 库路径 | /usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 |
+| 链接 | -lascendcl -lnnopbase -lopapi |
+| errno 头 | aclnn/opdev/op_errno.h (含 ACLNN_SUCCESS=0, ACLNN_ERR_PARAM_NULLPTR=161001) |
+| mul 头 | aclnnop/aclnn_mul.h |
+
+重要：这是独立审查任务，仅基于代码本身判断。
+```
+
+---
+
+## 附录 B：NPU 编译运行环境详情
+
+```bash
+# 编译命令
+g++ -std=c++17 -o $TEST $SOURCE \
+  -I/usr/local/Ascend/cann-8.5.0/include \
+  -L/usr/local/Ascend/cann-8.5.0/lib64 \
+  -L/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 \
+  -lascendcl -lnnopbase -lopapi \
+  -Wl,-rpath,/usr/local/Ascend/cann-8.5.0/lib64:/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 \
+  -Wl,--allow-shlib-undefined
+
+# 运行环境
+export LD_LIBRARY_PATH=/usr/local/Ascend/cann-8.5.0/lib64:\
+/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64:\
+/usr/local/Ascend/driver/lib64:\
+/usr/local/Ascend/driver/lib64/common:\
+/usr/local/Ascend/driver/lib64/driver
+
+# NPU 信息
+npu-smi: Ascend910 x 8, Driver 25.5.2
+CANN: 8.5.0 (compiler timestamp: 20250725)
+```
+
+---
+
+## 附录 C：NPU 测试完整输出
+
+```
+=== A01_bug1 ===
+Calling aclnnMulGetWorkspaceSize with out=nullptr...
+Expected: return ACLNN_ERR_PARAM_NULLPTR without crash
+Actual: returned status = 161001
+Returned error code 161001 (may have been fixed)
+[OK exit=0]
+
+=== A02_bug1 ===
+aclnnMulGetWorkspaceSize returned: 161002
+BUG: self[3,1] * other[1,4] -> broadcast shape [3,4], but out is [2,2]
+No bug: error correctly returned.
+[OK exit=0]
+
+=== A03_bug1 ===
+=== Bug 验证: aclnnMulGetWorkspaceSize 错误拒绝 DT_DOUBLE ===
+输入: self=DOUBLE[2,3], other=DOUBLE[2,3], out=DOUBLE[2,3]
+实际返回值: 561103
+正确行为: 应返回 ACLNN_SUCCESS (0), 因为 DT_DOUBLE 在支持列表中
+Bug原因: 第466行硬编码 if(self->GetDataType()==DT_DOUBLE) return ACLNN_ERR_PARAM_INVALID
+
+=== 交换律破坏验证 ===
+Mul(INT32, DOUBLE) 返回: 561103
+Mul(DOUBLE, INT32) 返回: 561103
+正确行为: 两者都应返回相同结果(乘法交换律)
+实际行为: Mul(DOUBLE,INT32)被错误拒绝, 交换律被破坏
+[OK exit=0]
+
+=== A04_bug1 ===
+=== Bug 1 验证: aclnnMulGetWorkspaceSize 缺少空tensor处理 ===
+self shape: [0, 4] (empty tensor)
+返回状态码: 0
+workspaceSize: 0
+
+正确行为: 应检测到空tensor后返回 ACLNN_SUCCESS(0) 且 workspaceSize=0，
+         与 aclnnMulsGetWorkspaceSize/aclnnInplaceMulGetWorkspaceSize 行为一致。
+实际行为: 未做空tensor检查，继续执行内部计算图构建，
+         可能返回非零workspaceSize或内部错误。
+[TIMEOUT]
+
+=== A05_bug1 ===
+=== Bug 1: canUseMuls ignores inferDtype, causes FP16 overflow ===
+Input: self=FP16 tensor, scalar=65536 (DT_FLOAT)
+Platform: Ascend 910B (IsRegBase()=true)
+Output dtype: DT_FLOAT (FP32)
+
+inferDtype computed = DT_FLOAT (because 65536 > FP16 max 65504)
+But canUseMuls=true (ignores inferDtype), so Muls used on FP16 tensor
+
+  Element[0]: self=1
+    Buggy result (Muls FP16 path):   inf [OVERFLOW!]
+    Correct result (Cast+Mul FP32):  65536
+  Element[1]: self=2
+    Buggy result (Muls FP16 path):   inf [OVERFLOW!]
+    Correct result (Cast+Mul FP32):  131072
+  Element[2]: self=0.5
+    Buggy result (Muls FP16 path):   32768
+    Correct result (Cast+Mul FP32):  32768
+  Element[3]: self=1
+    Buggy result (Muls FP16 path):   inf [OVERFLOW!]
+    Correct result (Cast+Mul FP32):  65536
+
+[BUG CONFIRMED] canUseMuls optimization produces INCORRECT results
+  Root cause: canUseMuls at line 398 does not check (inferDtype == self->GetDataType())
+  Expected: should fall through to else branch, Cast to FP32, then Mul
+[OK exit=0]
+
+=== A06_bug1 ===
+Bug 1: Calling aclnnMulsGetWorkspaceSize with workspaceSize=NULL
+Expected: should return ACLNN_ERR_PARAM_NULLPTR (161001)
+Actual: will SEGFAULT due to dereferencing NULL workspaceSize pointer
+Return code: 161001 (should not reach here if bug exists)
+[OK exit=0]
+
+=== A07_bug1 ===
+Calling aclnnMulGetWorkspaceSize with self=nullptr, other=nullptr, out=nullptr
+Expected behavior: should return ACLNN_ERR_PARAM_NULLPTR (161001)
+Actual behavior due to bug: returns ACLNN_SUCCESS (0) then crashes (SEGFAULT)
+
+Return status: 161001
+[OK exit=0]
+
+=== A08_bug1 ===
+Test: Calling aclnnMulsGetWorkspaceSize with workspaceSize=nullptr
+Actual behavior: [BUG CONFIRMED] SEGFAULT triggered due to null workspaceSize pointer dereference.
+Expected behavior: Function should return ACLNN_ERR_PARAM_NULLPTR (161001) instead of dereferencing nullptr.
+[EXIT=1]
+```
+
+---
+
+## 附录 D：各 Case Agent 完整 Bug 列表
+
+### D.1 A01 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | CheckMulNotNull 用 `(void)out` 跳过 out 空指针检查 | :140-145 | 高 |
+| 2 | aclnnInplaceMulGetWorkspaceSize 混合类型路径需 IsRegBase()，与 aclnnMul 不对称 | :638 | 中 |
+
+### D.2 A02 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | CheckMulShape 用 `(void)out` 跳过输出 shape 校验 | :292-299 | 高 |
+| 2 | CheckInplaceMulShape 缺 OP_CHECK_MAX_DIM | :301-306 | 中 |
+| 3 | aclnnInplaceMulGetWorkspaceSize 混合类型 !IsRegBase 多余 Cast | :638 | 中 |
+
+### D.3 A03 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | 466行硬编码 `if(self==DT_DOUBLE) return ERR`，与支持列表矛盾，破坏交换律 | :466 | 高 |
+
+### D.4 A04 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | aclnnMulGetWorkspaceSize 唯独缺空 tensor 提前返回 | :452-532 | 高 |
+| 2 | aclnnInplaceMulGetWorkspaceSize 混合类型不对称 | :631 | 中 |
+| 3 | CheckInplaceMulShape 缺 OP_CHECK_MAX_DIM | :301-306 | 中 |
+
+### D.5 A05 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | canUseMuls 忽略 inferDtype，FP16 scalar 超范围时溢出 | :398-410 | 高 |
+| 2 | workspaceSize/executor 空指针未检查 | :383,437 | 中 |
+| 3 | 混合类型路径缺 IsMulSupportNonContiguous 检查 | :485 | 中 |
+
+### D.6 A06 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | workspaceSize/executor 空指针未检查导致 SEGFAULT | :383,437,553,619 | 高 |
+| 2 | CheckInplaceMulShape 缺 OP_CHECK_MAX_DIM | :301-306 | 中 |
+| 3 | ConvertToTensor 返回值未做空指针检查 | :413,584 | 高 |
+
+### D.7 A07 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | CheckMulParams CHECK_RET 用 ACLNN_SUCCESS 而非 ACLNN_ERR_PARAM_NULLPTR | :322 | 严重 |
+
+### D.8 A08 完整发现
+
+| # | Bug 描述 | 位置 | 严重程度 |
+|---|---------|------|:---:|
+| 1 | workspaceSize/executor 空指针解引用 | :383,437,553,619 | 高 |
+| 2 | InferTensorScalarDtype INT64+DOUBLE→FLOAT 精度丢失 | :223-226 | 中 |
+| 3 | aclnnInplaceMulGetWorkspaceSize 混合类型 IsRegBase() 条件不对称 | :638 | 中 |
+
+---
+
+## 附录 E：跨 Case 高频发现统计
+
+| 固有 Bug | 出现频率 | 真实影响 |
+|---------|:---:|------|
+| CheckInplaceMulShape 缺 MAX_DIM | 4/8 (A02,A04,A05,A06) | 超维 tensor 可绕过 inplace 校验 |
+| InplaceMul mix-dtype IsRegBase 不对称 | 5/8 (A01,A02,A03,A04,A08) | 非RegBase下多余Cast |
+| workspaceSize/executor 空指针 | 3/8 (A05,A06,A08) | **NPU实测确认SEGFAULT** |
+| canUseMuls 忽略 inferDtype | 1/8 (A05) | **NPU实测确认 FP16 overflow** |
+
+---
+
+## 附录 F：ops-math 官方源码对比
+
+从 gitcode.com/cann/ops-math 8.5.0 分支克隆的官方 Mul 算子源码确认：
+- `mul_def.cpp` 中 Mul 算子仅注册 `ascend910_95` 和 `mc62cm12a` 两个 SoC 配置
+- 当前 NPU (Ascend 910 老版) 使用的是系统内置的 `libopapi.so` 中的 aclnnMul 实现
+- 无法在当前硬件上重新编译部署 buggy 版本（需要 910_95 硬件）
+- 所有 NPU 测试结果基于**正确版（内置）算子**运行，通过对比 baseline 行为推断 buggy 版差异
+
+---
+
+## 附录 G：文件清单
+
+| 文件 | 说明 |
+|------|------|
+| `EXPERIMENT_REPORT.md` | 本报告 |
+| `SKILL_error_injection_eval.md` | 评测流程 Skill |
+| `TRACKING.md` | 结果追踪矩阵 |
+| `agent_arena/output/op_api/A01-A08/result.md` | Agent 完整审查报告 |
+| `npu_tests/A01-A08_bug1.cpp` | 验证代码源文件 |
+| `npu_tests/build_all.sh` | 编译脚本 |
+| `npu_tests/run_all.sh` | 运行脚本 |
+| `ground_truth/case_01-08.md` | 评分标准 |
+| `error_testset/op_api/01-08_*/` | 注入用例（patch+README） |
+| `agent_arena/cases/op_api/A01-A08/` | 注入后的代码（Agent 可见） |
+| `ops-math/` | CANN 官方算子源码参考（.gitignore） |
