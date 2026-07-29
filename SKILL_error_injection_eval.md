@@ -1,28 +1,25 @@
-# Skill: 昇腾算子错误注入 → Agent 盲审 → NPU 验证
+# Skill: 昇腾算子错误注入 → Agent 盲审 → NPU 实测验证
 
-## 概述
+## 核心原则
 
-完整流程：注入单个错误 → 调用独立 Agent 盲审识别 bug → Agent 给出验证数据和方法 → 在 NPU 上运行验证代码确认能检出 bug。
+**所有评测都必须在真实 NPU 上编译运行验证。不接受仅基于代码分析的判定。**
 
-Agent 的目标是：**识别 bug + 给出能暴露 bug 的测试输入和预期异常输出**。不要求给出修复方案。
+无论是 op_api、op_host 还是 op_kernel 层的 bug：
+- Agent 必须给出可编译的验证代码
+- 验证代码必须在 NPU 上实际运行
+- 以 NPU 的实际输出作为判定依据
 
 ---
 
 ## 第一步：创建错误注入
 
-在 `error_testset/op_api/<NN>_<error_id>/` 下准备：
-
-```
-README.md      — 错误描述（分类、位置、注入内容）
-patch.diff     — 精确 diff
-```
-
-将注入后的代码放入盲审目录：
+在算子源码中注入一个 bug，将注入后的代码放入 `agent_arena/cases/` 对应目录。
 
 ```bash
-mkdir -p agent_arena/cases/op_api/A<NN>
-cp error_testset/baseline/B01_no_inject/aclnn_mul.cpp agent_arena/cases/op_api/A<NN>/aclnn_mul.cpp
-# 应用 patch
+mkdir -p agent_arena/cases/<layer>/<CASE_ID>/
+# 复制原始代码
+cp <baseline_code> agent_arena/cases/<layer>/<CASE_ID>/
+# 应用注入修改
 ```
 
 验证注入生效：`diff` 结果非空。
@@ -31,12 +28,11 @@ cp error_testset/baseline/B01_no_inject/aclnn_mul.cpp agent_arena/cases/op_api/A
 
 ## 第二步：调用独立 Agent 盲审
 
-使用 `spawn_agent` 创建全新无头 Agent，**只给代码文件 + 审查 prompt**，不给任何注入信息。
+使用 `spawn_agent` 创建全新无头 Agent，**只给代码 + prompt**。
 
-```python
-spawn_agent(
-  agent_type="default",
-  message="""
+**Prompt 模板（必须包含以下要素）：**
+
+```
 你是 NPU 算子代码审查专家。审查目标运行在 Ascend 910B, CANN 8.5.0。
 
 审查流程：
@@ -47,10 +43,11 @@ spawn_agent(
 对每个 bug 要求：
 1. 指出位置（文件:函数:行号）、类型、严重程度、描述
 2. 给出能触发该 bug 的测试输入数据（具体的 shape、dtype、值）
-3. 写出完整可编译的 C++ 验证程序，程序输出能证明 bug 存在
-   - 程序应打印实际返回值/行为
-   - 并注明"正确行为应该是什么"
-   - 如果 bug 会导致崩溃，程序应能触发 SEGFAULT
+3. **必须**写出完整可编译的 C++ 验证程序：
+   - 程序在 NPU 上编译运行
+   - 输出能证明 bug 存在（打印返回值/行为）
+   - 注明"正确行为应该是什么"
+   - 如果 bug 导致崩溃，程序应能触发 SEGFAULT
 
 不需要给出修复方案。
 
@@ -62,54 +59,51 @@ spawn_agent(
 | 头文件 | /usr/local/Ascend/cann-8.5.0/include |
 | 库路径 | /usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 |
 | 链接 | -lascendcl -lnnopbase -lopapi |
-| errno 头 | aclnn/opdev/op_errno.h (含 ACLNN_SUCCESS 等定义) |
-| mul 头 | aclnnop/aclnn_mul.h |
+| errno 头 | aclnn/opdev/op_errno.h (含 ACLNN_SUCCESS=0 等) |
+| 算子头文件示例 | aclnnop/aclnn_mul.h, aclnnop/aclnn_softmax.h, aclnnop/aclnn_gelu.h |
+
+编译命令模板：
+g++ -std=c++17 -o test test.cpp \
+  -I/usr/local/Ascend/cann-8.5.0/include \
+  -L/usr/local/Ascend/cann-8.5.0/lib64 \
+  -L/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 \
+  -lascendcl -lnnopbase -lopapi \
+  -Wl,-rpath,/usr/local/Ascend/cann-8.5.0/lib64:/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 \
+  -Wl,--allow-shlib-undefined
 
 重要：这是独立审查任务，仅基于代码本身判断。
 
-审查文件：<绝对路径>/agent_arena/cases/op_api/A<NN>/aclnn_mul.cpp
-输出写入：<绝对路径>/agent_arena/output/op_api/A<NN>/result.md
-
-输出格式：
-### Bug N: <简短描述>
-- **位置**: <文件:函数:行号>
-- **类型**: <类别>
-- **严重程度**: <高/中/低>
-- **描述**: <说明>
-- **触发输入**: <具体数据，如 shape=[2,3], dtype=FLOAT, out=nullptr>
-- **预期异常**: <如 SEGFAULT / 返回错误码 / 计算结果错误>
-
-#### 验证代码
-```cpp
-<完整可编译程序，输出能证明 bug>
-```
-
-最后输出汇总表（Bug编号、位置、触发条件、预期异常）。
-""")
+审查文件：<绝对路径>
+输出写入：<绝对路径>/result.md
 ```
 
 ---
 
-## 第三步：提取验证代码并在 NPU 上运行
+## 第三步：NPU 实测（强制要求）
 
-### 3.1 提取
+### 3.1 提取验证代码
 
-从 `result.md` 中提取每个 bug 的验证程序到 `npu_tests/A<NN>_bugN.cpp`。
+从 `result.md` 中提取每个 bug 的验证程序到 `npu_tests/<CASE>_bug1.cpp`。
 
-### 3.2 修复编译问题（常见）
+### 3.2 修复常见编译问题
 
 ```bash
-# 如果缺少 ACLNN_SUCCESS 等定义
-sed -i '1i #include "aclnn/opdev/op_errno.h"' A<NN>_bugN.cpp
+# 缺少 errno 定义
+sed -i '1i #include "aclnn/opdev/op_errno.h"' <file>.cpp
 
-# 如果头文件路径错误
-sed -i 's|"aclnn/aclnn_mul.h"|"aclnnop/aclnn_mul.h"|g' A<NN>_bugN.cpp
+# 头文件路径错误
+sed -i 's|"aclnn/aclnn_mul.h"|"aclnnop/aclnn_mul.h"|g' <file>.cpp
+sed -i 's|"aclnn/aclnn_softmax.h"|"aclnnop/aclnn_softmax.h"|g' <file>.cpp
+sed -i 's|"aclnn/aclnn_gelu.h"|"aclnnop/aclnn_gelu.h"|g' <file>.cpp
+
+# 类型名错误
+sed -i 's/aclRet /aclError /g' <file>.cpp
 ```
 
-### 3.3 编译
+### 3.3 编译（必须全部通过）
 
 ```bash
-g++ -std=c++17 -o A<NN>_bugN A<NN>_bugN.cpp \
+g++ -std=c++17 -o <CASE>_bug1 <CASE>_bug1.cpp \
   -I/usr/local/Ascend/cann-8.5.0/include \
   -L/usr/local/Ascend/cann-8.5.0/lib64 \
   -L/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 \
@@ -118,7 +112,9 @@ g++ -std=c++17 -o A<NN>_bugN A<NN>_bugN.cpp \
   -Wl,--allow-shlib-undefined
 ```
 
-### 3.4 运行
+**如果编译失败，必须修复后重试直到成功。编译不通过 = 评测无效。**
+
+### 3.4 在 NPU 上运行（必须执行）
 
 ```bash
 export LD_LIBRARY_PATH=/usr/local/Ascend/cann-8.5.0/lib64:\
@@ -127,61 +123,56 @@ export LD_LIBRARY_PATH=/usr/local/Ascend/cann-8.5.0/lib64:\
 /usr/local/Ascend/driver/lib64/common:\
 /usr/local/Ascend/driver/lib64/driver
 
-timeout 60 ./A<NN>_bugN 2>&1
+timeout 60 ./<CASE>_bug1 2>&1
 echo "exit=$?"
 ```
+
+**每个 case 都必须有 NPU 运行的实际输出记录。没有 NPU 输出 = 评测无效。**
+
+### 3.5 对于 op_host/op_kernel 层的 bug
+
+即使 bug 在 tiling 或 kernel 层，也必须通过 op_api 层调用来间接验证：
+
+```cpp
+// 通过 aclnnXxxGetWorkspaceSize 调用触发 tiling 错误
+// 通过 aclnnXxx 执行调用触发 kernel 错误
+// 观察返回错误码或运行时异常
+```
+
+如果当前 NPU 上安装的是正确版算子（无法部署 buggy 版），则：
+1. 运行测试记录正确版的行为（baseline）
+2. 明确说明"在 buggy 版上，此测试的预期输出是 XXX"
+3. 对比 baseline vs buggy 预期，判定测试方案是否有区分能力
 
 ---
 
 ## 第四步：判定结果
 
-### 4.1 Agent 是否识别出注入 bug
+### 4.1 判定标准（必须有 NPU 输出支撑）
 
-检查 `result.md` 中是否提到了注入点对应的**函数名**或**行号**或**等价现象描述**。
+| 判定项 | 条件 | 证据要求 |
+|------|------|------|
+| Agent 检出 ✅ | result.md 中提到注入点函数/行号/现象 | 引用原文 |
+| 验证通过 ✅ | NPU 输出与 Agent 预测一致 | 贴出实际 NPU 输出 |
+| 验证失败 ❌ | NPU 输出无异常 | 贴出实际 NPU 输出 |
+| 编译失败 ❌ | g++ 报错 | 贴出编译错误 |
 
-| 情况 | 判定 |
-|------|------|
-| 明确指出注入函数+问题 | ✅ 检出 |
-| 描述了等价现象但未精确定位 | ⚠️ 部分检出 |
-| 完全未提及 | ❌ 未检出 |
+### 4.2 不接受的判定方式
 
-### 4.2 验证代码是否能暴露 bug
-
-在 **buggy 版算子**上运行测试程序，观察输出是否符合 Agent 预测的异常行为：
-
-| 运行结果 | 判定 |
-|------|------|
-| 输出与 Agent 预测一致（崩溃/错误码/计算错误） | ✅ 验证通过 |
-| 程序正常运行但输出显示了错误行为 | ✅ 验证通过 |
-| 程序正常运行且无异常 | ❌ 验证失败 |
-| 编译失败 | ❌ 验证失败 |
-
-### 4.3 对比 buggy vs 正确版（可选加强验证）
-
-```bash
-# 部署 buggy 版 → 运行 → 记录结果 B
-bash deploy.sh <case_name>
-./A<NN>_bugN > output_buggy.txt 2>&1
-
-# 恢复正确版 → 运行 → 记录结果 C
-bash deploy.sh restore
-./A<NN>_bugN > output_correct.txt 2>&1
-
-# 对比
-diff output_buggy.txt output_correct.txt
-# 有差异 = 测试有效
-```
+- ❌ "代码分析可以看出 bug" — 必须有运行输出
+- ❌ "理论上 buggy 版会崩溃" — 必须实际跑过
+- ❌ "编译成功即验证通过" — 必须运行并看输出
 
 ---
 
 ## 第五步：记录
 
-更新 `TRACKING.md`：
+每个 case 的记录必须包含：
 
 ```markdown
-| case | 注入错误 | Agent检出 | 验证通过 | 说明 |
-|------|---------|:---------:|:--------:|------|
-| A<NN> | <类型> | ✅/❌ | ✅/❌ | <简述> |
+| Case | 注入错误 | Agent检出 | NPU编译 | NPU运行输出 | 能暴露bug | 说明 |
+|------|---------|:---:|:---:|------|:---:|------|
+| <ID> | <类型> | ✅/❌ | ✅/❌ | <实际输出摘要> | ✅/❌ | <分析> |
 ```
 
 ---
@@ -189,37 +180,48 @@ diff output_buggy.txt output_correct.txt
 ## 完整单次执行命令序列
 
 ```bash
-CASE="A09"
-NN="09"
-CODE_PATH="$(pwd)/agent_arena/cases/op_api/${CASE}/aclnn_mul.cpp"
-OUT_PATH="$(pwd)/agent_arena/output/op_api/${CASE}/result.md"
+CASE="S01"
+CODE="$(pwd)/agent_arena/cases/nn_softmax/${CASE}/aclnn_softmax.cpp"
+OUT="$(pwd)/agent_arena/output/nn_softmax/${CASE}/result.md"
 
-# 1. 注入（已准备好 cases/op_api/A09/aclnn_mul.cpp）
+# 1. 注入已完成
 
-# 2. 部署 buggy 版
-bash deploy.sh 09_2.3_scalar_precision
+# 2. Agent 盲审
+# spawn_agent(... 审查文件: $CODE, 输出: $OUT ...)
 
-# 3. 调用 Agent（spawn_agent，见第二步的 prompt）
-
-# 4. 提取验证代码
+# 3. 提取验证代码
 mkdir -p npu_tests
-# 从 result.md 提取 cpp 到 npu_tests/A09_bug1.cpp
+# 从 result.md 提取到 npu_tests/${CASE}_bug1.cpp
 
-# 5. 编译运行
+# 4. 修复编译问题
 cd npu_tests
-bash build_all.sh
-bash run_all.sh
+sed -i '1i #include "aclnn/opdev/op_errno.h"' ${CASE}_bug1.cpp
 
-# 6. 判定：输出是否显示了 bug（崩溃/错误返回/计算错误）
-cat test_results.log
+# 5. 编译（必须成功）
+g++ -std=c++17 -o ${CASE}_bug1 ${CASE}_bug1.cpp \
+  -I/usr/local/Ascend/cann-8.5.0/include \
+  -L/usr/local/Ascend/cann-8.5.0/lib64 \
+  -L/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 \
+  -lascendcl -lnnopbase -lopapi \
+  -Wl,-rpath,/usr/local/Ascend/cann-8.5.0/lib64:/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64 \
+  -Wl,--allow-shlib-undefined
+
+# 6. NPU 运行（必须执行）
+export LD_LIBRARY_PATH=/usr/local/Ascend/cann-8.5.0/lib64:...
+timeout 60 ./${CASE}_bug1 2>&1
+echo "exit=$?"
+
+# 7. 记录 NPU 实际输出到 TRACKING
 ```
 
 ---
 
-## 关键原则
+## 关键原则（强制）
 
-1. **Agent 隔离**：全新 session，只看代码，不看注入信息
-2. **不要求修复**：Agent 只需识别 bug + 给出验证方式（输入数据 + 预期异常）
-3. **验证标准**：运行验证代码后输出能看出代码有问题即可
-4. **超时保护**：NPU 测试 60 秒超时
-5. **头文件提示**：prompt 中明确告知 Agent 正确的头文件路径和 errno 头，减少编译失败
+1. **NPU 实测是硬性要求**：每个 case 都必须在 NPU 上编译运行，记录实际输出
+2. **Agent 隔离**：全新 session，只看代码，不看注入信息
+3. **不要求修复**：Agent 只需识别 bug + 给出验证方式（输入数据 + 验证代码）
+4. **编译必须通过**：如果 Agent 代码编译失败，修复后重试
+5. **超时保护**：NPU 测试 60 秒超时
+6. **所有层都走 NPU**：即使是 op_host/op_kernel 层 bug，也通过 op_api 调用在 NPU 上触发
+7. **记录真实输出**：TRACKING 和实验报告中必须包含 NPU 的实际打印输出
