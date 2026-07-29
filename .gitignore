@@ -257,3 +257,6 @@ ops-math/
 npu_tests/A0*_bug1
 npu_tests/*.log
 ops-nn/
+npu_tests/A*_bug1
+npu_tests/S*_bug1
+npu_tests/G*_bug1
