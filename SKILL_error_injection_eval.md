@@ -222,6 +222,81 @@ echo "exit=$?"
 2. **Agent 隔离**：全新 session，只看代码，不看注入信息
 3. **不要求修复**：Agent 只需识别 bug + 给出验证方式（输入数据 + 验证代码）
 4. **编译必须通过**：如果 Agent 代码编译失败，修复后重试
-5. **超时保护**：NPU 测试 60 秒超时
+5. **超时保护**：NPU 测试 120 秒超时
 6. **所有层都走 NPU**：即使是 op_host/op_kernel 层 bug，也通过 op_api 调用在 NPU 上触发
 7. **记录真实输出**：TRACKING 和实验报告中必须包含 NPU 的实际打印输出
+
+---
+
+## 算子编译与 NPU 部署（强制要求）
+
+### 编译要求
+
+**修改过的算子必须编译部署到 NPU 上真实执行，证明 bug 确实会被触发。**
+
+不接受仅 `GetWorkspaceSize` 参数校验层面的验证——kernel 执行层面的 bug 必须部署 buggy kernel 后在 NPU AICore 上实际执行。
+
+### 编译环境
+
+```bash
+# 环境变量
+export ASCEND_HOME_PATH=/usr/local/Ascend/cann-8.5.0
+export PATH=$ASCEND_HOME_PATH/tools/bisheng_compiler/bin:$PATH
+
+# 关键约束: cmake 必须在 /dev/shm (tmpfs) 下执行
+# 原因: bisheng 编译器产生的 .__dpc* 设备文件在普通文件系统有权限问题
+```
+
+### 编译流程
+
+```bash
+# 1. 准备编译目录
+rm -rf /dev/shm/ops_build && mkdir /dev/shm/ops_build && cd /dev/shm/ops_build
+
+# 2. cmake 配置 (指向 ops-math 源码)
+cmake <ops-math-path> \
+  -DASCEND_CANN_PACKAGE_PATH=$ASCEND_HOME_PATH \
+  -DASCEND_COMPUTE_UNIT="ascend910_93" \
+  -DCUSTOM_VENDOR_NAME=custom_test
+
+# 3. 编译特定算子
+make opapi_math ophost_math mul_src_copy -j8   # Mul 算子
+# 或
+make opapi_nn ophost_nn gelu_src_copy -j8      # GeLU 算子
+
+# 4. 部署 (需要 root)
+sudo cp libopapi_math.so /usr/local/Ascend/cann-8.5.0/opp/vendors/custom_test/op_api/lib/libcust_opapi.so
+```
+
+### 编译注入 bug 版本
+
+```bash
+# 替换源码为 buggy 版本
+cp agent_arena/cases/op_api/A07/aclnn_mul.cpp ops-math/math/mul/op_api/aclnn_mul.cpp
+
+# 增量编译 (只重编 opapi)
+cd /dev/shm/ops_build && make opapi_math -j8
+
+# 部署 buggy 版
+sudo cp libopapi_math.so /usr/local/Ascend/.../libcust_opapi.so
+
+# 运行测试 - NPU 上会触发 bug
+./npu_tests/A07_bug1
+# 预期: SEGFAULT (bug 被真实触发)
+
+# 恢复正确版
+git checkout -- ops-math/math/mul/op_api/aclnn_mul.cpp
+make opapi_math -j8 && sudo cp ...
+```
+
+### NPU 验证标准
+
+| 验证级别 | 条件 | 证据 |
+|---------|------|------|
+| ✅ 完整验证 | buggy版部署后NPU执行结果异常 | 对比 buggy vs correct 的输出差异 |
+| ⚠️ 参数层验证 | GetWorkspaceSize 返回码区分 | 正确版返回错误码,buggy版返回0 |
+| ❌ 无效 | 仅代码分析无NPU运行 | 不接受 |
+
+### 详细参考
+
+完整编译指南见 `BUILD_GUIDE.md`。
