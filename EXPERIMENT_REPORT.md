@@ -538,6 +538,64 @@ A08: exit=1  "[BUG CONFIRMED] SEGFAULT triggered"
 
 ---
 
+## 8. NN 算子评测（Softmax + GeLU）
+
+为验证 Agent 在更复杂算子上的能力，从 ops-nn (CANN 神经网络算子库) 中选取 **Softmax** 和 **GeLU** 两个典型算子进行注入评测。
+
+### 8.1 算子概况
+
+| 算子 | 用途 | op_api 代码行数 | 复杂度 |
+|------|------|:---:|------|
+| Softmax | 注意力机制核心，概率归一化 | 158 行 | 中（含 dim 归一化、多平台适配） |
+| GeLU | LLM/Transformer 激活函数 | 124 行 | 低-中（含 BF16 平台检查、格式校验） |
+
+### 8.2 注入与检出结果
+
+| Case | 算子 | 注入错误 | 难度 | Agent检出 | Agent 触发方式 |
+|------|------|---------|:---:|:---:|------|
+| S01 | Softmax | out空指针 `(void)out` | 简单 | ✅ | out=nullptr 调用 aclnnSoftmaxGetWorkspaceSize |
+| S02 | Softmax | Shape校验 `(void)out` | 简单 | ✅ | self=[2,3], out=[4,5] shape不匹配 |
+| S03 | Softmax | 空Tensor处理删除 | 简单 | ⚠️ | 空tensor路径分析（未直接指出缺少提前返回） |
+| G01 | GeLU | BF16从白名单删除 | 简单 | ✅ | self=BF16 tensor在910B上调用（白名单与SoC检查矛盾） |
+| G02 | GeLU | out dtype不检查 | 中等 | ✅ | self=FP32, out=FP16 不报错（静默截断） |
+| G03 | GeLU | MAX_DIM检查删除 | 中等 | ❌ | 未发现（只发现wsSize/executor空指针） |
+
+### 8.3 NN 算子 Agent 详细评测方式
+
+**S01 — Softmax out 空指针：**
+- 触发：`aclnnSoftmaxGetWorkspaceSize(valid_self, dim=0, nullptr, &ws, &exec)`
+- 预期：SEGFAULT（后续 CheckDtypeValid 解引用 out）
+- 检出理由：Agent 明确指出 `(void)out` 跳过了 NULL 检查
+
+**S02 — Softmax Shape 校验缺失：**
+- 触发：`self=[2,3,4], dim=1, out=[2,4,3]`（shape 不匹配）
+- 预期：应返回 ACLNN_ERR_PARAM_INVALID，实际通过校验后 ViewCopy 越界
+- 检出理由：Agent 发现 CheckShape 中 out 被忽略
+
+**G01 — GeLU BF16 白名单遗漏：**
+- 触发：`self=BF16 tensor, shape=[4,4]` 在 Ascend 910B 上调用
+- 预期：`CheckSocVersionIsSupportBf16()` 返回 true 但 `OP_CHECK_DTYPE_NOT_SUPPORT` 仍拒绝 BF16
+- 检出理由：Agent 发现代码逻辑矛盾——专门为910B写了BF16支持检查，但白名单中没有BF16
+
+**G02 — GeLU out dtype 不检查：**
+- 触发：`self=FP32[4,4], out=INT8[4,4]`
+- 预期：应返回 dtype 不匹配错误，实际通过后产生静默数据截断
+- 检出理由：Agent 发现 `(void)out` 跳过了 out dtype 校验
+
+### 8.4 对比分析
+
+| 维度 | Mul 算子 | Softmax/GeLU |
+|------|:---:|:---:|
+| 空指针校验缺失检出 | ✅ | ✅ |
+| Shape 校验缺失检出 | ✅ | ✅ |
+| 空Tensor处理删除检出 | ✅(Mul) | ⚠️(Softmax) |
+| dtype白名单变更检出 | ❌(Mul) | ✅(GeLU) |
+| MAX_DIM删除检出 | ❌(Mul) | ❌(GeLU) |
+
+**关键差异**：GeLU 的 BF16 白名单遗漏被检出（而 Mul 的 DT_DOUBLE 遗漏未检出），原因是 GeLU 代码中有明显的 `CheckSocVersionIsSupportBf16()` 函数与白名单矛盾，Agent 通过逻辑矛盾发现了问题。Mul 中没有这种"自相矛盾"的代码，所以无法仅从代码逻辑判断。
+
+---
+
 ## 附录 A：Agent 完整审查 Prompt
 
 ```
