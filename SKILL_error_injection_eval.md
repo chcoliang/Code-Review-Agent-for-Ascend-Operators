@@ -116,16 +116,30 @@ g++ -std=c++17 -o <CASE>_bug1 <CASE>_bug1.cpp \
 
 ### 3.4 在 NPU 上运行（必须执行）
 
-```bash
-export LD_LIBRARY_PATH=/usr/local/Ascend/cann-8.5.0/lib64:\
-/usr/local/Ascend/cann-8.5.0/aarch64-linux/lib64:\
-/usr/local/Ascend/driver/lib64:\
-/usr/local/Ascend/driver/lib64/common:\
-/usr/local/Ascend/driver/lib64/driver
+**必须设置在线编译环境，否则 kernel 无法在 NPU AICore 上执行：**
 
-timeout 60 ./<CASE>_bug1 2>&1
+```bash
+# === NPU 在线编译执行环境（必须！）===
+export ASCEND_HOME_PATH=/usr/local/Ascend/cann-8.5.0
+export PATH=$ASCEND_HOME_PATH/tools/bisheng_compiler/bin:$ASCEND_HOME_PATH/compiler/bin:$PATH
+export PYTHONPATH=$ASCEND_HOME_PATH/python/site-packages:$PYTHONPATH
+export LD_LIBRARY_PATH=$ASCEND_HOME_PATH/lib64:$ASCEND_HOME_PATH/aarch64-linux/lib64:/usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64/common:/usr/local/Ascend/driver/lib64/driver
+export ASCEND_OPP_PATH=$ASCEND_HOME_PATH/opp
+export ASCEND_OP_COMPILER_CACHE_MODE=enable
+export ASCEND_OP_COMPILER_CACHE_DIR=/dev/shm/op_cache
+mkdir -p /dev/shm/op_cache
+
+# 运行测试（120秒超时）
+timeout 120 ./<CASE>_bug1 2>&1
 echo "exit=$?"
 ```
+
+**验证 NPU AICore 真正执行的标志：**
+- `aclnnXxx return code: 0`（而非 561000/561103）
+- `Results: [正确计算结果]`
+- `npu-smi info` 中 HBM-Usage 有变化
+
+**不设置在线编译环境的表现：** 返回 561000（kernel 找不到），计算结果全 0。
 
 **每个 case 都必须有 NPU 运行的实际输出记录。没有 NPU 输出 = 评测无效。**
 
