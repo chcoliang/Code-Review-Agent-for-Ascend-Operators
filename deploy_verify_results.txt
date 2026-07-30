@@ -21,3 +21,33 @@
 | A09 | 2.3Scalar精度 | 需kernel级 | 0 | 0 | 无差异 |
 
 总结: 10/12 op_api层case成功在NPU上触发bug (83%)
+
+=== 补充验证 (2026-07-30 续) ===
+
+op_host tiling 层验证结论:
+- CANN 8.5.0 使用 ES 框架，tiling 逻辑集成在 libopapi_math.so 中
+- 修改独立的 libophost_math.so 对 aclnn 路径无效
+- ophost 的 MulTiling::DoOpTiling 即使返回 FAIL 也不影响 aclnnMul
+- 结论: tiling bug 需要通过修改 libopapi_math.so 源码中的计算路径注入
+
+Softmax/GeLU/BMM 算子验证状态:
+- 这些算子链接到 libopapi.so (uber库, 38MB)
+- 不是 libopapi_math.so (math分拆库)
+- 需要从 ops-nn 仓库编译 libopapi_nn.so 来部署验证
+- 当前编译环境仅配置了 ops-math
+
+最终确认已触发的 bug 列表 (共10个):
+1. A01  - 1.1空指针(深层)     - SEGFAULT
+2. A02  - 4.3Shape校验        - 161002→561103
+3. A03  - 2.1混合精度误删     - 0→161002  
+4. A05  - 1.2白名单遗漏       - 0→161002
+5. A06  - 1.3白名单过宽(深层) - 161002→0
+6. A07  - 1.4错误码伪装       - SEGFAULT
+7. A08  - 4.2维度上限         - 非0→0
+8. A15  - 3.3非连续           - 拒绝→放行
+9. A173 - 1.5API变体          - SEGFAULT
+10. A175 - 4.1广播Shape       - 161002→561103
+
+替换路径: /usr/local/Ascend/cann-8.5.0/lib64/libopapi_math.so
+编译命令: cd /dev/shm/ops_final && make opapi_math -j8
+密码: cat ~/ccl/passwd → 1
