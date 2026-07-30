@@ -11,6 +11,29 @@
 | ops-math 源码 | 本仓库 `ops-math/` 目录 (8.5.0 分支) |
 | 编译输出路径 | `/dev/shm/` (tmpfs，避免 NPU 设备文件权限问题) |
 
+## NPU 在线编译执行环境（关键！）
+
+**要让算子在 NPU AICore 上真正执行计算，必须设置以下环境变量：**
+
+```bash
+export ASCEND_HOME_PATH=/usr/local/Ascend/cann-8.5.0
+export PATH=$ASCEND_HOME_PATH/tools/bisheng_compiler/bin:$ASCEND_HOME_PATH/compiler/bin:$PATH
+export PYTHONPATH=$ASCEND_HOME_PATH/python/site-packages:$PYTHONPATH
+export LD_LIBRARY_PATH=$ASCEND_HOME_PATH/lib64:$ASCEND_HOME_PATH/aarch64-linux/lib64:/usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64/common:/usr/local/Ascend/driver/lib64/driver
+export ASCEND_OPP_PATH=$ASCEND_HOME_PATH/opp
+export ASCEND_OP_COMPILER_CACHE_MODE=enable
+export ASCEND_OP_COMPILER_CACHE_DIR=/dev/shm/op_cache
+mkdir -p /dev/shm/op_cache
+```
+
+**验证成功：**
+```
+$ ./A10_bug1
+aclnnMul return code: 0
+Results: [2.0, 6.0, 12.0, 20.0]    ← NPU AICore 计算结果正确！
+Expected: [2.0, 6.0, 12.0, 20.0]
+```
+
 ## 前提条件
 
 1. CANN 8.5.0 runtime 已安装
