@@ -1,0 +1,23 @@
+=== 部署验证最终结果 ===
+日期: 2026-07-30
+方法: 替换 /usr/local/Ascend/cann-8.5.0/lib64/libopapi_math.so
+
+已确认触发的Case (Buggy版与正确版行为明确不同):
+| Case | Bug类型 | 注入方式 | 正确版 | Buggy版 | 差异类型 |
+|------|---------|---------|--------|---------|---------|
+| A01 | 1.1空指针 | 多层(删null+错误码伪装) | 161001 | SEGFAULT | 崩溃 |
+| A02 | 4.3Shape校验 | CheckMulShape return true | 161002 | 561103 | 错误码不同 |
+| A03 | 2.1混合精度误删 | 插入DOUBLE硬拒 | 0 | 161002 | 合法被拒 |
+| A05 | 1.2白名单遗漏 | 删DT_DOUBLE | 0 | 161002 | 合法被拒 |
+| A06 | 1.3白名单过宽 | CheckMulParams return OK | 161002 | 0 | 非法放行 |
+| A07 | 1.4错误码伪装 | ERR→SUCCESS | 161001 | SEGFAULT | 崩溃 |
+| A08 | 4.2维度上限 | 删MAX_DIM | 非0(拒绝) | 0(放行) | 非法放行 |
+| A15 | 3.3非连续 | 删IsMulSupportNonContiguous | 拒绝 | 放行 | 非法放行 |
+| A173 | 1.5API变体 | 删InplaceMul other检查 | 161001 | SEGFAULT | 崩溃 |
+| A175 | 4.1广播Shape | CheckMulShape return true | 161002 | 561103 | 错误码不同 |
+
+纵深防御/框架兜底未触发:
+| A04 | 3.2空Tensor | 框架内部也处理 | 0 | 0 | 无差异 |
+| A09 | 2.3Scalar精度 | 需kernel级 | 0 | 0 | 无差异 |
+
+总结: 10/12 op_api层case成功在NPU上触发bug (83%)
