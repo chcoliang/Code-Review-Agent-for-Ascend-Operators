@@ -51,3 +51,22 @@ Softmax/GeLU/BMM 算子验证状态:
 替换路径: /usr/local/Ascend/cann-8.5.0/lib64/libopapi_math.so
 编译命令: cd /dev/shm/ops_final && make opapi_math -j8
 密码: cat ~/ccl/passwd → 1
+
+=== NN算子(Softmax/GeLU/BMM)部署验证进展 ===
+
+发现:
+- Softmax/GeLU/BMM 的测试程序链接到 libopapi.so (uber库38MB)
+- libopapi_nn.so (16MB) 是独立子库，通过重新链接可使用
+- ops-nn 编译成功 (libopapi_nn.so 在 /dev/shm/ops_nn_build/)
+- 但编译的 libopapi_nn.so 有未解析符号(依赖不完整)
+
+解决方案(后续):
+- 重新编译测试程序链接 libopapi_nn.so (而非 uber库)
+- 或替换 uber 库(需要把 math+nn+cv+transformer 合并)
+- 或修复 libopapi_nn.so 的依赖链接
+
+已确认可行的验证路径:
+- Mul 算子: 替换 libopapi_math.so → 10个case ✅
+- NN 算子: 需要替换 libopapi_nn.so 或 uber 库
+  - ops-nn cmake+make 编译成功 (/dev/shm/ops_nn_build/)
+  - 编译产物存在但有符号依赖问题
