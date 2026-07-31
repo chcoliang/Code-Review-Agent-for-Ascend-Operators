@@ -7,7 +7,7 @@ int main() {
     for (int i = 0; i < 500; i++) {
         void* ws = nullptr;
         aclrtMalloc(&ws, 32*1024*1024, ACL_MEM_MALLOC_HUGE_FIRST);
-        // BUG: no free
+
     }
     aclrtDestroyStream(stream);
     aclrtResetDevice(0);

@@ -163,7 +163,7 @@ ge::graphStatus ApplyAdamWTiling::DoElewiseTiling() {
         }
     } else {
         if (input0DType == ge::DT_FLOAT16) {
-            ret = eleBaseTiling.DoTiling<ApplyAdamWDAG<float, float>::OpDag>(tiling_->eleBaseTilingData); // BUG: wrong DAG for fp16
+            ret = eleBaseTiling.DoTiling<ApplyAdamWDAG<float, float>::OpDag>(tiling_->eleBaseTilingData);
             dType = APPLY_ADAM_W_TPL_FP16;
         } else if (input0DType == ge::DT_BF16) {
             ret = eleBaseTiling.DoTiling<ApplyAdamWDAG<half, float>::OpDag>(tiling_->eleBaseTilingData);

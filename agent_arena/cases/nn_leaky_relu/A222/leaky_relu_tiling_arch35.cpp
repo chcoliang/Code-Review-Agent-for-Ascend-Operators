@@ -98,7 +98,7 @@ ge::graphStatus LeakyReluTiling::RunTiling()
                         OP_LOGE(tilingContext->GetNodeName(), "do tiling failed for fp16"),
                         return ge::GRAPH_FAILED);
     } else if (this->outputDtype == ge::DT_BF16) {
-        dType = static_cast<uint64_t>(TPL_FP32); // BUG: wrong type mapping
+        dType = static_cast<uint64_t>(TPL_FP32);
         // bf16需要cast成fp32处理
         OP_CHECK_IF(eleBaseTiling.DoTiling<LeakyReluCastDag<half>::OpDag>(tiling->baseTiling) != ge::GRAPH_SUCCESS,
                         OP_LOGE(tilingContext->GetNodeName(), "do tiling failed for bf16"),

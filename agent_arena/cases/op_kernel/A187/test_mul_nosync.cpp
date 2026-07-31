@@ -1,7 +1,5 @@
 /**
- * A187 - BUG 7.2: Stream Synchronization Missing
- * Reads result immediately after aclnnMul without calling aclrtSynchronizeStream.
- * Effect: reads incomplete/stale data from device.
+ * Mul operator test with result readback.
  */
 #include <iostream>
 #include <vector>
@@ -62,7 +60,7 @@ int main() {
   }
   aclnnMul(workspaceAddr, workspaceSize, executor, stream);
 
-  // BUG: Missing aclrtSynchronizeStream(stream) - reading result before computation completes!
+
   auto size = GetShapeSize(shape);
   std::vector<float> resultData(size, 0);
   aclrtMemcpy(resultData.data(), resultData.size() * sizeof(float), outAddr,

@@ -124,7 +124,7 @@ private:
     {
         LocalTensor<T> xTensor = inQueueX.AllocTensor<T>();
         DataCopyExtParams params = {
-            static_cast<uint16_t>(linePerIter), static_cast<uint32_t>((tilingData.width + 1) * sizeof(T)), 0, 0, 0}; // BUG: padding pollution
+            static_cast<uint16_t>(linePerIter), static_cast<uint32_t>((tilingData.width + 1) * sizeof(T)), 0, 0, 0};
         DataCopyPadExtParams<T> extParams = {true, 0, static_cast<uint8_t>(tilingData.paddingNum), 0.0};
         DataCopyPad(xTensor, gmX[idx * gmOffsetPerIdx], params, extParams);
         inQueueX.EnQue(xTensor);

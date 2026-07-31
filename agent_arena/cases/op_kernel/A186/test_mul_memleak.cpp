@@ -1,6 +1,5 @@
 /**
- * A186 - BUG 7.1: GM Memory Leak
- * Loop calls aclnnMul but never frees workspace, causing device memory exhaustion.
+ * Mul operator stress test with repeated workspace allocation.
  */
 #include <iostream>
 #include <vector>
@@ -43,7 +42,7 @@ int main() {
   std::vector<int64_t> shape = {1024, 1024};
   std::vector<float> hostData(1024 * 1024, 1.0f);
 
-  // BUG: Loop allocates workspace but never frees it -> device memory leak
+
   for (int iter = 0; iter < 1000; iter++) {
     void *selfAddr = nullptr, *otherAddr = nullptr, *outAddr = nullptr;
     aclTensor *self = nullptr, *other = nullptr, *out = nullptr;
@@ -62,8 +61,7 @@ int main() {
     aclnnMul(workspaceAddr, workspaceSize, executor, stream);
     aclrtSynchronizeStream(stream);
 
-    // BUG: workspace is never freed!
-    // Missing: aclrtFree(workspaceAddr);
+
     aclDestroyTensor(self);
     aclDestroyTensor(other);
     aclDestroyTensor(out);

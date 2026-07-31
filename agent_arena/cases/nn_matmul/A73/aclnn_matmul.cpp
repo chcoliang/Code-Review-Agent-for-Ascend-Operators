@@ -564,7 +564,7 @@ public:
         }
 
         // 连续性转换
-        // Contiguous removed
+
         CHECK_RET(self != nullptr, ACLNN_ERR_INNER_NULLPTR);
         mat2 = l0op::Contiguous(mat2, executor);
         CHECK_RET(mat2 != nullptr, ACLNN_ERR_INNER_NULLPTR);

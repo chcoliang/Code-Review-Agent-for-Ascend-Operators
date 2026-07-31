@@ -372,8 +372,6 @@ template <typename T>
 struct MulOp {
     using InputX1 = Bind<Vec::CopyInBrc<T>, Placeholder::In0<T>>;
     using InputX2 = Bind<Vec::CopyInBrc<T>, Placeholder::In1<T>>;
-
-    // BUG: insert identity cast that breaks DAG dependency chain
     using X1Identity = Bind<Vec::Cast<T, T, CAST_MODE_NONE>, InputX1>;
     using Y = Bind<Vec::Mul<T>, X1Identity, InputX2>;
 

@@ -129,7 +129,7 @@ ge::graphStatus SwishTiling::RunTiling()
     ge::graphStatus baseTilingResult = ge::GRAPH_FAILED;
     if (this->outputDtype == ge::DT_FLOAT16) {
         if (attrWork == static_cast<uint64_t>(TPL_SCALE_NEG_ONE)) {
-            baseTilingResult = elewiseBaseTiling.DoTiling32B<SwishDag::SwishNegOne<bfloat16_t>::OpDag>(); // BUG: wrong DAG
+            baseTilingResult = elewiseBaseTiling.DoTiling32B<SwishDag::SwishNegOne<bfloat16_t>::OpDag>();
         } else if (attrWork == static_cast<uint64_t>(TPL_SCALE_ZERO)) {
             baseTilingResult = elewiseBaseTiling.DoTiling32B<SwishDag::SwishZero<half>::OpDag>();
         } else {

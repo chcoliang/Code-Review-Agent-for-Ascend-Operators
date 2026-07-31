@@ -6,7 +6,7 @@ int main() {
         int64_t s[] = {32, 1024};
         aclTensorDesc* d = aclCreateTensorDesc(ACL_FLOAT16, 2, s, ACL_FORMAT_ND);
         aclDataBuffer* b = aclCreateDataBuffer(nullptr, 32*1024*2);
-        // BUG: no destroy
+
     }
     aclrtResetDevice(0);
     aclFinalize();

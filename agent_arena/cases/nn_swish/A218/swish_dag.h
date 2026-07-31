@@ -150,7 +150,7 @@ using namespace Ops::Base;
          using OpCopyOut = Bind<Vec::CopyOut<T>, Placeholder::Out0<T>, OpResult>;
 
          using Outputs = Elems<OpCopyOut>;
-         using MemCfg = MemOptCfg<MemLevel::LEVEL_1>; // BUG: wrong MemLevel
+         using MemCfg = MemOptCfg<MemLevel::LEVEL_1>;
          using OpDag = DAGSch<Outputs, void, MemCfg>;
      };
      template <typename T>

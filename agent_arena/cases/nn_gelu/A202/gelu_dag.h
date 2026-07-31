@@ -21,7 +21,7 @@
 #include "atvoss/util/placeholder.h"
 
 using namespace Ops::Base;
-const float NEG_SQRT_EIGHT_OVER_PI = -1.595769121 * 0.04471; // BUG: precision error
+const float NEG_SQRT_EIGHT_OVER_PI = -1.595769121 * 0.04471;
 const float TANH_APPROX_FACTOR = 1 / 0.044715;
 const int CAST_MODE_NONE = 0;
 const int CAST_MODE_RINT = 1;

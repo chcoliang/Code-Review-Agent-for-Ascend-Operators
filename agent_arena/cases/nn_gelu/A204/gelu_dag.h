@@ -78,7 +78,7 @@ struct GeluDAG {
     using OpCopyOut = Bind<Vec::CopyOut<U>, Placeholder::Out0<U>, OpResultCast>;
 
     using Outputs = Elems<OpCopyOut>;
-    using MemCfg = MemOptCfg<MemLevel::LEVEL_1>; // BUG: wrong MemLevel
+    using MemCfg = MemOptCfg<MemLevel::LEVEL_1>;
     using OpDag = DAGSch<Outputs, void, MemCfg>;
 };
 

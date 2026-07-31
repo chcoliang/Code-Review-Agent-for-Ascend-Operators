@@ -10,7 +10,7 @@ int main() {
     aclrtMalloc(&v, 1024*1024*4, ACL_MEM_MALLOC_HUGE_FIRST);
     aclrtMalloc(&grad, 1024*1024*4, ACL_MEM_MALLOC_HUGE_FIRST);
     aclrtMalloc(&out, 1024*1024*4, ACL_MEM_MALLOC_HUGE_FIRST);
-    // BUG: no sync
+
     float h[1024];
     aclrtMemcpy(h, sizeof(h), out, sizeof(h), ACL_MEMCPY_DEVICE_TO_HOST);
     aclrtFree(var); aclrtFree(m); aclrtFree(v); aclrtFree(grad); aclrtFree(out);

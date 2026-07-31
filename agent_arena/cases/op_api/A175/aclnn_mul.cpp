@@ -292,7 +292,7 @@ inline static bool CheckMulShape(const aclTensor *self, const aclTensor *other, 
   Shape dstShape;
   OP_CHECK_MAX_DIM(self, MAX_SUPPORT_DIMS_NUMS, return false);
   OP_CHECK_MAX_DIM(other, MAX_SUPPORT_DIMS_NUMS, return false);
-  // BUG: skip broadcast inference, directly use self's shape
+
   dstShape = self->GetViewShape();
   OP_CHECK_SHAPE_NOT_EQUAL_WITH_EXPECTED_SIZE(out, dstShape, return false);
   return true;

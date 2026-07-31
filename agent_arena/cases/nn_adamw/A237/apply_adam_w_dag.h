@@ -37,7 +37,7 @@ constexpr static MicroAPI::CastTrait castTrait0 = {MicroAPI::RegLayout::ZERO, Mi
 
 constexpr static MicroAPI::CastTrait castTrait1 = {MicroAPI::RegLayout::ZERO, MicroAPI::SatMode::NO_SAT,
                                                    MicroAPI::MaskMergeMode::ZEROING,
-                                                   RoundMode::CAST_NONE};  // BUG: RINT->NONE
+                                                   RoundMode::CAST_NONE};
 
 constexpr static uint16_t VECTOR_LENGTH = platform::GetVRegSize();
 

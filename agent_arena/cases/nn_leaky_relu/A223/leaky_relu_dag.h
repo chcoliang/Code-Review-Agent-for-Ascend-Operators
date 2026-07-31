@@ -34,7 +34,7 @@ struct LeakyReluCastDag {
     using OpCopyInX = Bind<Vec::CopyIn<U>, Placeholder::In0<U>>;
     using OpCopyInXCast = Bind<Vec::Cast<T, U, 0>, OpCopyInX>;
     using OpLeakRelu = Bind<Vec::LeakyRelu<T>, OpCopyInXCast, Placeholder::Var<T, 0>>;
-    constexpr static int CAST_MODE_RINT = 0; // BUG: precision truncation
+    constexpr static int CAST_MODE_RINT = 0;
     using OpCopyOutCast = Bind<Vec::Cast<U, T, CAST_MODE_RINT>, OpLeakRelu>;
     using OpCopyOut = Bind<Vec::CopyOut<U>, Placeholder::Out0<U>, OpCopyOutCast>;
     using Outputs = Elems<OpCopyOut>;

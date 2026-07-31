@@ -1,7 +1,5 @@
 /**
- * A189 - BUG 7.6: Tensor Not Destroyed (Reference Count Leak)
- * Creates tensors in a loop but never calls aclDestroyTensor.
- * Effect: reference count leak, host memory grows indefinitely.
+ * Mul operator test with tensor creation loop.
  */
 #include <iostream>
 #include <vector>
@@ -63,7 +61,7 @@ int main() {
     aclnnMul(workspaceAddr, workspaceSize, executor, stream);
     aclrtSynchronizeStream(stream);
 
-    // BUG: Tensors are never destroyed! Missing:
+
     // aclDestroyTensor(self);
     // aclDestroyTensor(other);
     // aclDestroyTensor(out);

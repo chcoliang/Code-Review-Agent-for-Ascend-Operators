@@ -8,7 +8,7 @@ int main() {
     aclrtMalloc(&in, 4096, ACL_MEM_MALLOC_HUGE_FIRST);
     aclrtMalloc(&out, 4096, ACL_MEM_MALLOC_HUGE_FIRST);
     // launch swish on stream...
-    // BUG: no sync
+
     float h[1024];
     aclrtMemcpy(h, 4096, out, 4096, ACL_MEMCPY_DEVICE_TO_HOST);
     aclrtFree(in); aclrtFree(out);

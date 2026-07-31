@@ -19,7 +19,7 @@
 #include "kernel_operator.h"
 
 namespace AscendC {
-constexpr float MASK_VAL = 0.0f; // BUG: wrong mask value, NaN propagation
+constexpr float MASK_VAL = 0.0f;
 
 template <typename T>
 class ScaledMaskedSoftmaxV2

@@ -256,7 +256,6 @@ __aicore__ inline void SoftmaxV2OpsBase::CopyIn(const LocalTensor<T>& dstTensor,
                        GetUbBlockSize();
     DataCopyPadExtParams<T> padParams;
     padParams.isPad = false;
-    // DataCopyPad(dstTensor, srcTensor, params, padParams); // BUG: removed
 }
 
 template <typename T>

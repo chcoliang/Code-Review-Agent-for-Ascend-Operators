@@ -374,8 +374,6 @@ struct MulOp {
     using InputX2 = Bind<Vec::CopyInBrc<T>, Placeholder::In1<T>>;
 
     using Y = Bind<Vec::Mul<T>, InputX1, InputX2>;
-
-    // BUG: CopyOut with count+1, writing one extra element beyond valid range (padding pollution)
     using OpCopyOut = Bind<Vec::CopyOutOverflow<T>, Placeholder::Out0<T>, Y>;
     using Outputs = Elems<OpCopyOut>;
     using MemCfg = MemOptCfg<MemLevel::LEVEL_2>;

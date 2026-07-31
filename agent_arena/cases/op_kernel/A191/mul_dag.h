@@ -370,7 +370,7 @@ struct MulDouble : public Vec::ElemwiseBinaryOP<T, T, T> {
 // 支持float, int32, int64, int16, complex64
 template <typename T>
 struct MulOp {
-    // BUG: Skip CopyIn, directly use GM placeholder as if it were in UB (dirty memory)
+
     using InputX1 = Placeholder::In0<T>;
     using InputX2 = Placeholder::In1<T>;
 

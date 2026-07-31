@@ -343,7 +343,7 @@ struct ApplyAdamWDAG {
   using OpCopyVOut = Bind<Ops::Base::Vec::CopyOut<T>, Placeholder::Out2<T>, OpVOutCast>;
 
   using Outputs = Elems<typename ApplyAdamWDAG::OpCopyVarOut, typename ApplyAdamWDAG::OpCopyMOut, typename ApplyAdamWDAG::OpCopyVOut>;
-  using MemCfg = MemOptCfg<MemLevel::LEVEL_1>; // BUG: wrong MemLevel
+  using MemCfg = MemOptCfg<MemLevel::LEVEL_1>;
   using OpDag = DAGSch<typename ApplyAdamWDAG::Outputs, void, MemCfg>;
 };
 

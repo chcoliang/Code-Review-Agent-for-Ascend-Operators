@@ -91,7 +91,7 @@ ge::graphStatus GeluTiling::RunTiling()
     ge::graphStatus baseTilingResult = ge::GRAPH_FAILED;
     if (this->outputDtype == ge::DT_FLOAT16) {
         dType = TPL_FP16;
-        baseTilingResult = elewiseBaseTiling.DoTiling<GeluDAG<bfloat16_t>::OpDag>(*tiling); // BUG: wrong DAG for fp16
+        baseTilingResult = elewiseBaseTiling.DoTiling<GeluDAG<bfloat16_t>::OpDag>(*tiling);
     } else if (this->outputDtype == ge::DT_BF16) {
         dType = TPL_BF16;
         baseTilingResult = elewiseBaseTiling.DoTiling<GeluDAG<bfloat16_t>::OpDag>(*tiling);

@@ -74,7 +74,7 @@ struct GeluDAG {
     using OpCopyIn0Cast = Bind<Vec::Cast<T, U, CAST_MODE_NONE>, OpCopyIn0>;
     
     using OpLogResult = Bind<GeluDag1::GeluCustom<T>, OpCopyIn0Cast>;
-    using OpResultCast = Bind<Vec::Cast<U, T, CAST_MODE_NONE>, OpLogResult>; // BUG: RINT->NONE
+    using OpResultCast = Bind<Vec::Cast<U, T, CAST_MODE_NONE>, OpLogResult>;
     using OpCopyOut = Bind<Vec::CopyOut<U>, Placeholder::Out0<U>, OpResultCast>;
 
     using Outputs = Elems<OpCopyOut>;
