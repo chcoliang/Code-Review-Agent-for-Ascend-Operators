@@ -1,0 +1,1 @@
+**Bug**: 第180-182行 `CheckShapeValid` 中当 `dimTensor2==1||dimTensor2==2` 时，删除了K轴不匹配的错误检查（`if (selfKDim != mat2KDim) { return false; }` 被移除），导致K维不匹配的矩阵乘法不被拦截，产生计算错误。触发条件：self=[3,5], mat2=[4,6]（K=5 vs K=4不匹配但通过校验）。
