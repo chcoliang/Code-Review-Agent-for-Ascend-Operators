@@ -1,1 +1,0 @@
-**Bug**: 第112行 `CheckDtypeValid` 中新增 `if (self->GetDataType() != mat2->GetDataType()) { return false; }`，错误地要求两个输入dtype必须相同，拒绝了合法的混合精度输入（如fp16×fp32的type promotion场景）。触发条件：self=DT_FLOAT16, mat2=DT_FLOAT。

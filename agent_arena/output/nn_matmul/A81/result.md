@@ -1,1 +1,0 @@
-**Bug**: 第581行 `CalL1Tiling` 中 `uint64_t totalL1Size = compileInfo_.l1Size + 256` 错误地将L1可用空间增大了256B（该256B是为rpc预留的），导致tiling计算时认为L1空间比实际大，分配的depth可能超出真实L1容量引发数据覆盖。触发条件：L1空间接近满载的大shape场景（如M=256, N=256, K=4096, FP16）。
